@@ -1,0 +1,584 @@
+---
+title: "Semesteroppgave Sok-1005"
+author: "Kandidat Nr: 27, 25, 32"
+date : "`r format(Sys.Date(),'%eth of %B, %Y')`"
+output:
+  html_document:
+    df_print: paged
+  word_document: default 
+  pdf_document: default
+---
+```{r}
+library(tidyverse)
+library(jsonlite)
+library(lubridate)
+library(gt)
+library(scales)
+```
+
+### **Oppgave 1, sammenslåing av datasett**
+```{r}
+### Dowloading the six different dataframes
+
+stores <- read.csv("https://data.mendeley.com/public-files/datasets/6htjnfs78b/files/26afd5e7-90b1-4301-ac5e-5905b38c4ec2/file_downloaded")
+
+county_crime <- read.csv("https://data.mendeley.com/public-files/datasets/6htjnfs78b/files/3691994e-2874-4ee6-b215-12e130c96175/file_downloaded")
+
+county_demographic <- read.csv("https://data.mendeley.com/public-files/datasets/6htjnfs78b/files/527e7486-7233-460a-99e0-3529b7cd7d49/file_downloaded")
+
+county_employment <- read.csv("https://data.mendeley.com/public-files/datasets/6htjnfs78b/files/846ac757-721e-4fd9-a414-5871f60de093/file_downloaded")
+
+weekly_sales <- read.csv("https://data.mendeley.com/public-files/datasets/6htjnfs78b/files/b963fdd1-0df9-4257-bd62-65256ec9d57c/file_downloaded")
+
+weekly_weather <- read.csv("https://data.mendeley.com/public-files/datasets/6htjnfs78b/files/b8708b3c-c5e8-456e-83f4-9f23f472a840/file_downloaded")
+
+```
+
+
+```{r}
+### Fixing the date column in Weekly_Sales, and Weekly_Weather.
+
+weekly_sales$Date <- mdy(weekly_sales$Date)
+
+weekly_weather$Weather_Date <- dmy(weekly_weather$Weather_Date)
+```
+
+
+```{r}
+### Cleaning the dataframes, removing excess variables.
+stores <- stores %>%
+  rename(
+    County_Name = Store_County,
+    Weather_Station = Store_Weather_Station ) %>% # Renaming Store_County to County_Name to merge easier. 
+  select(-Store_Minority_Clients) # Removing Minority Clients. 
+
+
+weekly_sales <- weekly_sales %>% # Renaming Store_Num to have a big letter N, to merge easier with same Variable name.
+  rename(
+    Store_Num = Store_num)
+
+weekly_weather <- weekly_weather %>% # Renaming to Date, to merge easier with another Date column 
+  rename(
+    Date = Weather_Date)
+
+stores <- stores %>%
+  mutate(Annual_Rent_Estimate = as.numeric(gsub(",", "", Annual_Rent_Estimate)))
+
+
+```
+
+
+```{r}
+
+### Combining the Three datasets with the same amount of Observation(6). 
+
+crime_demographic<- left_join(county_crime,county_demographic)
+
+crime_demographic_employment <- left_join(crime_demographic,county_employment)
+
+```
+
+
+```{r}
+### Merging Weekly_Sales and Weekly_Weather.
+
+Sales_weather <- merge(weekly_sales, stores, by = 'Store_Num') %>% 
+  left_join(weekly_weather)
+```
+
+
+
+```{r}
+### Combining everything into one big Data_frame named 'All data"
+all_data <- left_join(Sales_weather,crime_demographic_employment,by="County_Name")
+```
+
+
+```{r}
+### Removing Year, date, month in 'All data'
+
+all_data <- all_data %>%
+  select(-Year,-Day) %>%
+  rename(Week = Weather_Week)
+```
+
+Noe vi legger merke til når vi laster ned dataene og skal sette de sammen, er at på “ukentlig vær”-datasettet mangler observasjoner fra uke 13 og den går dermed rett fra uke 12 til 14. Grunnen til dette er at ukene henger riktig sammen med datoene, men at observasjonene av kjeden ikke starter for 1.april 2012. Det vil si at observasjonsuke 1 i 2012 står som uke 14, noe som er riktig forhold til datoen. Observasjonene fra uke 14 til 53 er for 2012 og observasjonene fra uke 1 til 12 er året 2013 fram til april. Da oppgaven er å vise fram hva vi i vår bedrift evner å gjøre med dataen for dere, er dette noe vi ikke henger oss noe ytterligere opp i.  
+
+### **Oppgave 2, salgsrapport for et enkelt utsalg**
+
+```{r}
+
+LCS<-all_data %>% filter(Store_Num=="16") %>%
+  select(Store_Name,Date,Week,Profit,INV_NUMBER,Store_Num,Description,Price,Sold,Sales,Tot_Sls,Margin,Profit,Date)
+
+
+
+Sum_Week_LCS <- all_data %>%
+  filter(Store_Num == "16") %>% 
+  group_by(Week) %>%
+  summarise("Profit"=sum(Profit))
+
+```
+
+
+```{r}
+fig1<-Sum_Week_LCS %>% 
+  ggplot(aes(x=Week,y=Profit)) +
+  geom_line(size=1.1, color='blue')  +
+  geom_point(size=2, color='red')+
+  scale_x_continuous(breaks=seq(1, 53,1))+
+  theme(axis.text.x = element_text(angle=60, vjust = 0.6))  +
+  labs(subtitle="Figur 1",
+       x = "Uker",
+       y = "Total ukentlig profitt",
+       title = "Lake City Stripmall Ukentlig profitt. ")
+
+fig1
+```
+I en ukentlig salgsrapport vil vi kunne gi dere tall og figurer på hvordan den valgte butikken gjør det ukentlig både sammenliknet med egen bedrift tidligere uker, men også sammenliknet med gjennomsnittet av de andre bedriftene i kjeden. 
+
+I Figur 1 kan vi se Lake City Stripmalls ukentlige profitt av salg for hele det siste året. Vi kan dermed se hvordan Lake City Stripmall gjør det i forhold til seg selv for hver uke.  
+```{r}
+#Calculating prosent change for revenue weekly basis, week nr.6 -> 14
+
+Tabell_1 <- Sum_Week_LCS %>% 
+  mutate(pct_change = (Profit/lag(Profit) - 1) * 100)
+```
+
+```{r}
+#Slicing the data to only show week nr. 6-14
+ tabell6_14 <- slice(Tabell_1, c(15:23))
+```
+
+```{r}
+tabell6_14 <- gt(tabell6_14,
+   rowname_col = "rowname")
+```
+
+
+```{r}
+fig1.2 <- fig1 +
+  labs(subtitle="Figur 2")+
+  xlim(16,24)
+
+fig1.2
+```
+Hvis vi da ser for oss et scenario der sjefen for Lake City stripmall sitter på kontoret sitt en mandags morgen i uke 25 og ønsker å sjekke salgsrapporten for hvordan de gjorde det i forrige uke ettersom han skal oppdatere selgerne sine på morgenmøte. Da kan han vise til ved hjelp av Figur 2 at i uke 24 hadde de lavere profitt enn i uken før. Han kan også vise til en negativ trend de siste 4 ukene og den laveste profitten av salg, eneste under 7 500 USD, de siste 8 ukene.   
+
+```{r}
+#Creating a table with the weekly % change for LCS.
+tabell6_14 %>%
+  tab_header(
+    title = "Ukentlig endring LCS",
+    subtitle = "Tabell 1") 
+    
+```
+Vi kan også ved hjelp av tabell 1 se hvor mye den prosentvise endringen har vært fra uke til uke, noe som også er en fin indikasjon på hvordan utviklingen har vært ettersom man får eksakte tall på utviklingen hvis det skulle være mer ønskelig enn figurer. Vi kan se ut ifra tabellen at Lake City ikke har de største endringene fra uke 16 til 19, men at det er en noe negativ trend. Dette endrer seg i uke 20 der vi plutselig får en oppgang i profitt, på 6 prosent. Etter dette har det vært en relativt stabil profittnedgang frem til uke 24, da var nedgangen på hele 6%.  
+
+```{r}
+#Selecting the variables needed to have the correct data to show the weekly profit for the rest of stores minus LCS.
+
+Others<-all_data %>% filter(Store_Num!="16") %>%
+  select(Store_Name,Date,Week,Profit)
+
+Sum_Week_Others<-
+  aggregate(Others$Profit, 
+            by=list(Week=Others$Week), 
+            FUN=sum) %>%
+  rename(Profit = x)%>%
+  mutate(Mean=Profit/9)
+
+LCS_Others <- Sum_Week_LCS %>%
+  mutate(Mean = Sum_Week_Others$Mean)
+
+```
+
+
+```{r}
+# Plotting a weekly report for LCS, compaired to the rest of the branches.
+colors <- c("Lake City Stripmall" = "blue", "Gj.snitt av alle andre butikkene" = "orange")
+
+fig2<-LCS_Others %>% 
+  ggplot(aes(x=Week)) +
+  geom_line(aes(y=Profit,color='Lake City Stripmall'), size=1.1)  +
+  geom_line(aes(y=Mean, color='Gj.snitt av alle andre butikkene'),  size=0.9)+
+  geom_point(aes(x=Week,y=Profit), size=2, color='red')+
+  geom_point(aes(x=Week,y=Mean), size=2, color='black')+ 
+  scale_x_continuous(breaks=seq(1, 53,1))+
+  theme(axis.text.x = element_text(angle=60, vjust = 0.6))  +
+  labs(subtitle="Figur 3",
+       x = "Uker",
+       y = "Total ukentlig profitt",
+       title = "Ukentlig rapport for LCS sammenliknet med resten av lokasjonene",
+       color='')+
+  theme(legend.position = "bottom")+
+  scale_color_manual(values=colors)
+
+fig2
+```
+Noe annet sjefer for bedrifter liker å gjøre er å vite hvordan de gjør det i forhold til andre bedrifter, vi kan derfor ta å sammenlikne ukentlig profitt av salg for Lake City Stripmall med de andre bedriftene. Vi tar derfor gjennomsnittet av alle de andre bedriftene i kjeden, altså sett bort fra Lake City Stripmall og ender opp med Figur 3 som viser den ukentlig profitt for Salt Lake sammenlignet med gjennomsnittet til de ni andre bedriftene i kjeden i løpet av et år. 
+```{r}
+ fig3 <- fig2 +
+  labs(subtitle="Figur 4")+
+  xlim(16,24)
+
+fig3
+```
+Tilbake til scenarioet, så vil sjefen ved Lake City Stripmall ved hjelp av Figur 4 kunne se hvordan gjennomsnittet av resten har gjort det de siste ukene, da kan han berolige seg om at Salt Lake Stripmall har også høyere profitt de siste åtte ukene frem til uke 24 sammenliknet med resten. Både Salt Lake og gjennomsnittet har holdt seg nokså stabil fra uke 16 til 23. Noe bekymringsverdig Salt Lake Stripmall må tenke på, er at i uke 24 hadde gjennomsnittet for første gang, på disse ukene vi ser tilbake på og sammenlikner med, ørliten lavere profitt enn resten. At gjennomsnittet av resten ser ut til å være på en oppadgående kurve, mens Salt Lake er på en nedadgående er også noe bekymringsverdig som de må tenke litt over.
+
+Alt dette er en nyttig pekepinn i forhold til hvordan utviklingen og trenden er, om den er positiv eller negativ, og når de eventuelt skal begynne å tenke eller gjøre noe annerledes. Eventuelt kan det være en fin pekepinn på at de holder seg stabil og gjør det greit.  
+
+```{r}
+# Running the count function to find out how many unuqie items being sold in LCS Store. 
+count(unique(all_data[c("Description")]))
+# 502 unique items being sold in the LCS store, 
+```
+
+
+```{r}
+# Selecting the right variables, to be able to display the most sold items in a weekly report for LCS.
+
+sales_per_item <- LCS %>%
+  select(INV_NUMBER,Store_Num,Description,Price,Sold,Sales,Tot_Sls,Margin,Profit,Date)
+
+
+```
+
+
+```{r}
+# One DataFrame with LCS, with data only containing weekly sales
+week_LCS <- sales_per_item %>% 
+  filter(Date == "2012-06-10")
+
+
+```
+
+```{r}
+# Calculating the total profit of each item being sold for week nr.14
+
+week_profit_LCS <- week_LCS %>%
+  group_by(Description) %>%
+  summarise(Profit = sum(Profit)) %>%
+  arrange(desc(Profit))
+```
+
+```{r} 
+#Applying aggregate to all sales for week nr24. Too clearly see how many sales each items has. 
+aggregate_sales_weekly <- aggregate(data = sales_per_item, # Applying aggregate
+                          Sold ~ Description,
+                          function(x) length(unique(x)))
+                          
+```
+
+```{r include=FALSE}
+data_new1 <- Reduce(rbind,                          
+                    by(aggregate_sales_weekly,
+                       aggregate_sales_weekly["Sold"],
+                       head,
+                       n = 10))
+
+data_new1 <- data_new1 %>%
+  arrange(desc(Sold))
+```
+
+```{r}
+# Most bought  ten items for week nr.24
+top_10_Sold_weekly <- data_new1 %>%
+  slice_head(n=10)
+```
+
+```{r}
+#Changing to a gt table. 
+top_10_Sold_weekly <- gt(top_10_Sold_weekly,
+   rowname_col = "rowname")
+```
+
+```{r}
+# Top ten most sold items for week nr.24
+top_10_Sold_weekly %>%
+  tab_header(
+    title = "Mest solgte varer i uke 24 LCS",
+    subtitle = "Tabell 2") 
+```
+
+Vi vil også kunne presentere hva som kjøpes mest av for hver uke; med andre ord produktene som er mest populært og som ikke burde tas vekk fra sortimentet. For uke 24 hos Lake City Stripmall kan vi se en topp 10-liste i tabell 2. En annen årsak til at dette bør være med i en ukesrapport er at ved å få en oversikt over hva som er populært kan vi lage menyer der vi kombinerer det som er mest populært og flest ønsker å kjøpe med varer som har god margin og vil bidra til bedre profitt.  
+
+### **Oppgave 3, månedlig salgsrapport på konsernledelse-nivå**
+
+```{r}
+### Monthly Profit for all stores combined.
+
+Monthly_Profit_Total <- all_data %>%
+  select(Month,Profit)
+
+Monthly_Profit_Total_Combined <- Monthly_Profit_Total %>%
+  group_by(Monthly_Profit_Total$Month) %>%
+  summarise(Profit=sum(Profit))
+ 
+
+fig4 <- Monthly_Profit_Total_Combined %>%
+  ggplot(aes(x=`Monthly_Profit_Total$Month`,y=Profit)) +
+  geom_line(size=1.1, color='blue')  +
+  geom_point(size=2, color='red')+
+  scale_x_continuous(breaks=seq(1, 53,1))+
+  theme(axis.text.x = element_text(angle=60, vjust = 0.6))  +
+  labs(subtitle="Figur 5",
+       x = "Måned",
+       y = "Profitt",
+       title = "Total profit, samtlige lokasjoner")
+fig4
+
+```
+I Figur 5 ser vi hvordan den totale profitten for konsernet ender seg fra måned til måned i løpet av hele året. Dette kan være nyttig å ha med i konsernrapporten. Ut ifra disse kan vi se nærmere på en bestemt måned. Vi kan bruke dette til å sammenlikne med en tidligere måned. Ledelsen kan bruke denne dataen hvis de er inni en negativ trend forhold til måneden før, til å tenke nytt og skape nye tilbudskampanjer og insentiver for å øke profitten. 
+
+```{r}
+#Selecting the right variabels to summarise profit for all stores.
+
+all_profit <- all_data %>%
+  group_by(Description) %>%
+  summarise(Profit=sum(Profit)) %>%
+  arrange(desc(Profit))
+```
+
+```{r}
+# filtering the right time period. 
+monthly_all <- all_data[all_data$Date >= "2012-04-01" & all_data$Date <= "2012-04-29",]
+
+```
+
+```{r}
+#Monthly profit summarised for all Stores. 
+monthly_profit_all <- monthly_all %>%
+  summarise(Profit = sum(Profit)) %>%
+  arrange(desc(Profit))%>%
+  mutate(Store=" hele kjeden")
+
+monthly_profit_all
+```
+I konsernrapporten kan vi også vise fram til ledelsen hvor mye kjeden har i profitt totalt sett for hele måneden, vi viser til april 2012, der profitten for hele kjeden var på 351 987 dollar.
+
+
+```{r}
+#Montly profit summarised for all Stores. 
+
+monthly_profit_all_stores <- monthly_all %>%
+  group_by(Store_Name) %>%
+  summarise(Profit = sum(Profit)) %>%
+  arrange(desc(Profit)) 
+```
+
+
+```{r}
+# mutating a prosentage of all sales to display in plot 6.
+monthly_profit_all_stores <- monthly_profit_all_stores %>%
+  mutate(prosent = scales::percent(Profit / sum(Profit), accuracy = .1, trim = FALSE))
+
+```
+
+```{r}
+#Plotting monthly profit for all stores, with the prosentage of contribution of each store. 
+monthly_profit_all_stores %>%
+  mutate(profit1=fct_reorder(Store_Name,Profit)) %>%
+  ggplot(aes(profit1, Profit, fill = Store_Name)) +
+  geom_col(fill = "steelblue") +
+  theme(axis.text.x = element_text(angle=275, vjust = 0)) +
+  scale_y_continuous(labels = scales::comma, breaks = seq(0,350000,by=10000)) +
+  geom_text(aes(label=prosent), position = position_stack(vjust=0.87), color="white") +
+  coord_flip()+
+  labs(title = "Månedlig Profitt",
+       subtitle = "Figur 6",
+       x =" Butikk",
+       y = "Profitt i Dollar")
+
+```
+Videre kan vi ved hjelp av Figur 6 vise hvordan profitten denne måneden er fordelt på hver av bedriftene, både i prosentandel inni søylene og i dollar på x-aksen. Den grafiske fremstillingen med månedlig profitt bidrar til å se hvilken bedrift som bidrar mest og minst, dermed kan konsernledelsen ved å bruke denne få en fin oversikt og sammenlikning mellom butikkene de har i kjeden. Vi kan se at det er Power City Freestand som skiller seg ut og bidrar med hele 19 prosent, noe som tilsvarer 66934 dollar. Power City Freestand bidrar med 1.64 ganger så mye, på den totale profitten, enn neste på lista som er North Town Stripmall med sine 12.2 prosent, noe som tilsvarer 42 978 dollar. En annen butikk som bidrar mye i april ligger også i Power City, og er Power City Stripmall, som med sine 11.9 prosent dermed bidrar tredje mest denne måneden. Den som bidrar minst på total profitt er University Town BigBox, den bidrar med 5.5 prosent. 
+
+
+```{r}
+# calculating the prosentage of contribution to the sum of all profit for april month, all stores. 
+ monthly_profit_all_stores_rent <- monthly_profit_all_stores %>%
+  mutate(monthly_rent = stores$Annual_Rent_Estimate/12,
+         Profit_after_rent = Profit - monthly_rent,
+         renteprosent= scales::percent(Profit_after_rent / sum(Profit_after_rent), accuracy = .1, trim = FALSE))
+```
+
+
+```{r}
+#Monthly result after rent
+monthly_profit_all_stores_rent %>%
+  mutate(profit_rent=fct_reorder(Store_Name,Profit_after_rent)) %>%
+  ggplot(aes(profit_rent, Profit_after_rent, fill = Store_Name)) +
+  geom_col(fill = "steelblue") +
+  theme(axis.text.x = element_text(angle=275, vjust = 0)) +
+  scale_y_continuous(labels = scales::comma, breaks = seq(0,350000,by=10000)) +
+  geom_text(aes(label=renteprosent), position = position_stack(vjust=0.87), color="white") +
+  coord_flip()+
+  labs(title = "Månedlig Profitt med leie trukket fra",
+       subtitle = "Figur 7",
+       x =" Butikk",
+       y = "Profitt i Dollar")
+```
+
+```{r}
+#Total profit for all stores after rent is paid
+monthly_profit_all_stores_rent <- monthly_profit_all_stores_rent %>%
+  mutate(sum_profit_after_rent = sum(Profit_after_rent))
+
+sum(monthly_profit_all_stores_rent$Profit_after_rent)
+```
+```{r}
+#Calculating the total amount of rent for a year. 
+351987 - 320414
+```
+I Figur 7 kan vi vise til hvordan den månedlige profitten for de forskjellige salgsstedene er etter de har betalt den estimerte leien for lokale eller tomten. Da kan vi se at endringene ikke er de største. Vi ser at til tross for at Power Freestand betaler totalt størst leie, bidrar de fortsatt med klart mest med sine 19.3% som tilsvarer 61684 USD. Rekkefølgen på hvem som bidrar mest og minst på den totale profitten er uforandret ettersom de som tjener minst i profitt også betaler minst leie. Ellers ser vi at noen bidrar litt mindre etter leien er betalt, dette er fordi noen har relativt billigere leie enn andre. Vi ser også at den totale profitten nå er på 320 414 USD, med andre ord betaler konsernet 31 573 USD totalt i leie.
+
+```{r}
+# Most sold items of April month. 
+
+sales_month_all <- monthly_all %>%
+  group_by(Description) %>%
+  summarise(Total_Sold=sum(Sold)) %>%
+  arrange(desc(Total_Sold))
+```
+
+```{r}
+# all products sold for a month period, with the prosentage of totale sales
+sales_month_all <- sales_month_all %>%
+  mutate(Prosent = scales::percent(Total_Sold / sum(Total_Sold), accuracy = .1, trim = FALSE)) %>%
+  slice_head(n=10)
+
+```
+
+```{r}
+sales_month_all <- gt(sales_month_all,
+   rowname_col = "rowname")
+```
+
+```{r}
+
+ sales_month_all %>%
+    tab_header(
+    title = "Mest solgte varer i april måned",
+    subtitle = "Tabell 3")
+  
+```
+Ved hjelp av en oversikt over de mest solgte varene i april vil ledelsen få et godt overblikk over hvilke produkter de bør fokusere på å fronte mot kundene, samt at varene bør være en del av det faste sortimentet i alle butikkene. I tabell 3 er en oversikt over de mest solgte varene i konsernet for april, her vil det også være en gyllen mulighet for ledelsen å iverksette “Menyer” der det kombineres produkter med god margin sammen med de mest solgte for å maksimere profitten.  
+
+### **Oppgave 4, kan dataen benyttes til å planlegge nye utsalg? **
+```{r}
+### Yearly Profit for all stores combined 
+year_all <- all_data[all_data$Date >= "2012-04-01" & all_data$Date <= "2013-03-24",]
+```
+
+
+```{r}
+#Yearly profit for all stores.
+
+profit_all_stores <- year_all %>%
+  group_by(Store_Name) %>%
+  summarise(Profit = sum(Profit)) %>%
+  arrange(desc(Profit))
+
+```
+
+
+
+```{r}
+## add percentage label with scales::percent()
+profit_all_stores <- profit_all_stores %>% 
+  mutate(prosent = scales::percent(Profit / sum(Profit), accuracy = .1, trim = FALSE))
+```
+
+```{r}
+#Plotting the yearly profit for each individual store.
+profit_all_stores %>%
+  mutate(profit1=fct_reorder(Store_Name,Profit)) %>%
+  ggplot(aes(profit1, Profit, fill = Store_Name)) +
+  geom_col(fill = "steelblue") +
+  theme(axis.text.x = element_text(angle=275, vjust = 0)) +
+  geom_text(aes(label=prosent), hjust=1.3, color="white") +
+  scale_y_continuous(labels = scales::comma, breaks = seq(0,3000000,by=100000)) +
+  coord_flip()+
+  labs(title = "Årlig Profitt",
+       subtitle = "Figur 8",
+       x =" Butikk",
+       y = "Profitt i Dollar")
+
+```
+
+Det første vi tar for oss er omsetningen til de ulike matbedriftene. Vi tar først og ser på profitten uten betalt leie, for å få omsetningen. Grunnen til dette er at bedrifter ofte har omsetningsmål. Dermed kan sjefen/konsernledelsen sjekke omsetningen til de ti ulike bedriftene. Som vi ser i Figur 8 så er det Power City FreeStand som har den største omsetningen med 594 085.5 dollar som tilsvarer 17.6% av omsetningen til disse ti bedriftene til sammen. Det som er interessant med dette er at det er den eneste matbedriften som har en såkalt «freestand». Alle de andre matbedriftene er enten plassert på en strip mall eller en big box. Den nest høyeste omsetningen er North Town StripMall på 428 464.1 dollar med 12.7%, så forskjellen er stor mellom den øverste bedriften og den nest øverste. 
+
+
+
+```{r}
+# Calculating the profit for each store when rent is been withdrawn.
+profit_all_stores_rent <- profit_all_stores %>%
+  mutate(Annual_rent = stores$Annual_Rent_Estimate,
+         Profit_with_rent = Profit - Annual_rent,
+         Renteprosent= scales::percent(Profit_with_rent / sum(Profit_with_rent), accuracy = .1, trim = FALSE))
+```
+
+```{r}
+#Yearly profit after rent is paid
+profit_all_stores_rent %>%
+  mutate(profit_rent=fct_reorder(Store_Name,Profit_with_rent)) %>%
+  ggplot(aes(profit_rent, Profit_with_rent, fill = Store_Name)) +
+  geom_col(fill = "steelblue") +
+  geom_text(aes(label=Renteprosent), hjust=1.3, color="white") +
+  theme(axis.text.x = element_text(angle=275, vjust = 0)) +
+  scale_y_continuous(labels = scales::comma, breaks = seq(0,3000000,by=100000)) +
+  coord_flip()+
+  labs(title = "Årlig Profitt etter leien er betalt",
+       subtitle = "Figur 9",
+       x =" Butikk",
+       y = "Profitt i Dollar")
+  
+```
+Det neste vi gjør er å ta omsetningen og trekker fra leien av ‘lokale’. Dette gjør vi for å få profitten til disse ti bedriftene. I Figur 9 ser vi at Power City FreeStand enda er klart øverst med en profitt på 531 085.5 dollar med en prosent på 17.8. North Town StripMall som igjen er den nest øverste har en profitt på 379 864.1 dollar, med 12.7%. 
+
+Deretter tar vi for oss om Drive through er noe som anbefales. Vi bruker Figur 9 til å se på profitten til de ulike matbedriftene, og resultatene viser at matbedriften med mest profitt, Power City FreeStand, og matbedriften med fjerde mest profitt, Lake City StripMall, av ti mulige er de eneste med drive through. Dette fremviser at Drive through veldig mulig kan være en essensiell faktor for et nytt utsalg for å få høyest mulig profitt. 
+
+
+Det neste som sjekkes er om bedriftene som ligger ved siden av en skole tjener gjennomsnittlig mer eller mindre enn bedriftene som ikke ligger ved siden av en skole. Ifølge figur 9 ser vi at tre av de fire matbedriftene som ligger nærme en skole er av de fire høyeste profitt-tjeningene. Disse er Power City FreeStand, North Town StripMall og Lake City StripMall. Den siste bedriften, River City StripMall, er fjerde nederst i profitt, men i gjennomsnitt ser vi at det er langt mer profitabelt å ligge nærme en skole, enn å ikke gjøre det. 
+
+
+
+```{r}
+employment <- gt(county_employment,
+   rowname_col = "rowname")
+```
+
+```{r}
+#Table with the County Employment
+employment %>%
+    tab_header(
+    title = "County Employment",
+    subtitle = "Tabell 4") 
+```
+Arbeidsstyrken i et fylke er viktig å se på. Dersom man starter et nytt utsalg så trengs det absolutt nye arbeidere. Derfor er det bra og ha en litt høy mengde av kvalifiserte arbeidere som ikke har en jobb. Det å finne arbeidere skal aldri være en vanskelig jobb, men desto flere kvalifiserte arbeidere i området, desto lettere og raskere går rekrutteringsprosessen. Som vi ser på tabellen, er Appleton county og Power county de fylkene med mest arbeidsstyrke. Av de 121 082 personene som er i arbeidsstyrken i Appleton county er 12 815 arbeidsledige. Det tilsvarer en arbeidsledighet på 10,6%, som er den høyeste av alle fylkene. 
+
+River county og Farm county er i motsetning, de fylkene med minst arbeidsstyrke. River county har minst arbeidsstyrke på 29 564 personer, der 2 203 av dem er arbeidsledige. som tilsvarer 7,5% som også er minst av alle fylkene. 
+
+
+```{r}
+#Table with the amount og population per County
+county_total_pop <- county_demographic %>%
+  select(County_Name,County_Total_Census_Pop) %>%
+  mutate(Population = County_Total_Census_Pop) %>%
+  select(-County_Total_Census_Pop)
+
+county_total_pop <- gt(county_total_pop,
+   rowname_col = "rowname")
+
+county_total_pop %>%
+    tab_header(
+    title = "County Total Population",
+    subtitle = "Tabell 5") 
+```
+
+Mengden innbyggere i en by er viktig ettersom at dette hovedsakelig vil være kundene. Vi ser på tabellen at Appleton county har flest innbyggere med 246977 personer, mens River county har minst innbyggere med 59404 personer. 
+
+  
+
+Dersom konsernledelsen skulle ønske å etablere et nytt utsalg kan datasettet bli brukt for å finne den beste lokasjonen. Ved bruk av datasettet fant vi ut at Power county vil være det fylke som er mest profitabelt å starte et nytt utsalg i, og byen vil være Power City. Ettersom at vi kan se i Figur 9 at begge matbedriftene i Power City er to av de tre med høyest profitt, er det logisk at dette er plassen et nytt utsalg burde startes på. Av disse to matbedriftene i Power City så gjør den med freestand det vesentlig bedre enn den i en strip mall. Den med freestand var i tillegg plassert i nærheten av en skole og brukte Drive Through, noe som viste seg å hjelpe essensielt. I tabell 4 kan vi se at Power county har en arbeidsstyrke på 92 041 der 9.3 % er arbeidsledige, noe som burde føre til at det ikke skulle være så vanskelig å finne arbeidere. 
+
